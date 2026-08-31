@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gcode-tool-list"
+version = "0.1.0"
+description = "A local Windows desktop tool for CNC G-code programs."
+requires-python = ">=3.10"
+dependencies = [
+    "PySide6",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest",
+]
+
+[project.scripts]
+gcode-tool-list = "gcode_tool_list.main:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
