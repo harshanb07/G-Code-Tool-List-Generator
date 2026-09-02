@@ -1,2 +1,0 @@
-[console_scripts]
-gcode-tool-list = gcode_tool_list.main:main
