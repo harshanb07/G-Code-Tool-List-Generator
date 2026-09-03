@@ -10,4 +10,12 @@ class ToolOccurrence:
     tool_number: int
     line_number: int
     raw_line: str
-    inline_comment: str | None
+    comments: tuple[str, ...]
+
+
+@dataclass
+class ToolGroup:
+    """All tool-change occurrences for one normalized tool number."""
+
+    tool_number: int
+    occurrences: tuple[ToolOccurrence, ...]
