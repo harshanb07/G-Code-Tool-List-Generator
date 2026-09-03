@@ -10,12 +10,13 @@ _TOOL_PATTERN = re.compile(r"(?<![A-Z])T(\d+)", re.IGNORECASE)
 _TOOL_CHANGE_PATTERN = re.compile(r"(?<![A-Z])M0?6(?!\d)", re.IGNORECASE)
 
 
+def _replace_comment_with_spaces(match: re.Match[str]) -> str:
+    return " " * len(match.group(0))
+
+
 def _hide_comments(raw_line: str) -> str:
     """Replace complete parenthesized comments with equal-length spaces."""
-    return _COMMENT_PATTERN.sub(
-        lambda match: " " * len(match.group(0)),
-        raw_line,
-    )
+    return _COMMENT_PATTERN.sub(_replace_comment_with_spaces, raw_line)
 
 
 def find_tool_changes(source_text: str) -> list[ToolOccurrence]:
@@ -24,7 +25,7 @@ def find_tool_changes(source_text: str) -> list[ToolOccurrence]:
     lines = source_text.splitlines()
 
     for line_index, raw_line in enumerate(lines):
-        comments = list(_COMMENT_PATTERN.finditer(raw_line))
+        comment_matches = list(_COMMENT_PATTERN.finditer(raw_line))
         code = _hide_comments(raw_line)
 
         tool_match = _TOOL_PATTERN.search(code)
@@ -33,23 +34,31 @@ def find_tool_changes(source_text: str) -> list[ToolOccurrence]:
             continue
 
         tool_call_end = max(tool_match.end(), tool_change_match.end())
-        associated_comments = [
-            comment_text
-            for match in comments
-            if match.start() >= tool_call_end
-            if (comment_text := match.group(1).strip())
-        ]
+        associated_comments: list[str] = []
 
+        for comment_match in comment_matches:
+            if comment_match.start() < tool_call_end:
+                continue
+
+            comment_text = comment_match.group(1).strip()
+            if comment_text:
+                associated_comments.append(comment_text)
+
+        # The shop rule allows comments within five physical following lines.
         for following_line in lines[line_index + 1 : line_index + 6]:
-            following_comments = list(_COMMENT_PATTERN.finditer(following_line))
-            if _hide_comments(following_line).strip():
+            following_comment_matches = list(
+                _COMMENT_PATTERN.finditer(following_line)
+            )
+            hidden_following_line = _hide_comments(following_line)
+            remaining_content = hidden_following_line.strip()
+
+            if remaining_content:
                 break
 
-            associated_comments.extend(
-                comment_text
-                for match in following_comments
-                if (comment_text := match.group(1).strip())
-            )
+            for comment_match in following_comment_matches:
+                comment_text = comment_match.group(1).strip()
+                if comment_text:
+                    associated_comments.append(comment_text)
 
         occurrences.append(
             ToolOccurrence(
