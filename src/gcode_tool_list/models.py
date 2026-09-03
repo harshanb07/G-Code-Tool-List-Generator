@@ -35,3 +35,19 @@ class ToolGroup:
 
     tool_number: int
     occurrences: tuple[ToolOccurrence, ...]
+
+
+@dataclass
+class ToolSummary:
+    """Final structured information for one tool."""
+
+    tool_number: int
+    description: str
+    max_z_depth: str | None
+    h_registers: tuple[int, ...]
+    d_registers: tuple[int, ...]
+    documented_d_values: tuple[str, ...]
+    notes: tuple[str, ...]
+    declarations: tuple[DeclaredTool, ...]
+    occurrences: tuple[ToolOccurrence, ...]
+    warnings: tuple[str, ...] = ()
