@@ -11,6 +11,8 @@ class ToolOccurrence:
     line_number: int
     raw_line: str
     comments: tuple[str, ...]
+    h_registers: tuple[int, ...] = ()
+    d_registers: tuple[int, ...] = ()
 
 
 @dataclass
