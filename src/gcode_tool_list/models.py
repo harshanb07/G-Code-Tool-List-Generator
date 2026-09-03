@@ -23,6 +23,10 @@ class DeclaredTool:
     line_number: int
     raw_line: str
     details: str
+    description: str = ""
+    h_registers: tuple[int, ...] = ()
+    d_registers: tuple[int, ...] = ()
+    documented_d_values: tuple[str, ...] = ()
 
 
 @dataclass

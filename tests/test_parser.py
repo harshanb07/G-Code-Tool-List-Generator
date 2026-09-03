@@ -576,6 +576,10 @@ def test_finds_one_declared_tool() -> None:
             line_number=1,
             raw_line=source,
             details='3/16 EM 0.375"FL 0.5"OUT ER16 - H17 - D17 - D0.1875"',
+            description='3/16 EM 0.375"FL 0.5"OUT ER16',
+            h_registers=(17,),
+            d_registers=(17,),
+            documented_d_values=('0.1875"',),
         )
     ]
 
@@ -591,9 +595,9 @@ def test_preserves_multiple_declarations_in_header_order() -> None:
     )
 
     assert find_declared_tools(source) == [
-        DeclaredTool(3, 1, "(T3 - DRILL)", "DRILL"),
-        DeclaredTool(1, 3, "(T1 - ROUGHER)", "ROUGHER"),
-        DeclaredTool(2, 5, "(T2 - FINISHER)", "FINISHER"),
+        DeclaredTool(3, 1, "(T3 - DRILL)", "DRILL", "DRILL"),
+        DeclaredTool(1, 3, "(T1 - ROUGHER)", "ROUGHER", "ROUGHER"),
+        DeclaredTool(2, 5, "(T2 - FINISHER)", "FINISHER", "FINISHER"),
     ]
 
 
@@ -601,7 +605,7 @@ def test_accepts_lowercase_declared_tool() -> None:
     source = "(t4 - SPOT DRILL)"
 
     assert find_declared_tools(source) == [
-        DeclaredTool(4, 1, source, "SPOT DRILL")
+        DeclaredTool(4, 1, source, "SPOT DRILL", "SPOT DRILL")
     ]
 
 
@@ -609,7 +613,7 @@ def test_normalizes_leading_zero_declared_tool() -> None:
     source = "(T007 - FINISHER)"
 
     assert find_declared_tools(source) == [
-        DeclaredTool(7, 1, source, "FINISHER")
+        DeclaredTool(7, 1, source, "FINISHER", "FINISHER")
     ]
 
 
@@ -626,7 +630,7 @@ def test_accepts_flexible_spacing_around_declaration_hyphen(
     source: str,
 ) -> None:
     assert find_declared_tools(source) == [
-        DeclaredTool(1, 1, source, "DESCRIPTION")
+        DeclaredTool(1, 1, source, "DESCRIPTION", "DESCRIPTION")
     ]
 
 
@@ -640,6 +644,7 @@ def test_preserves_declaration_raw_line_and_one_based_line_number() -> None:
             line_number=2,
             raw_line=raw_line,
             details="BALL MILL",
+            description="BALL MILL",
         )
     ]
 
@@ -648,8 +653,8 @@ def test_preserves_repeated_declarations_separately() -> None:
     source = "(T1 - FIRST)\n(T1 - SECOND)\nT1 M06"
 
     assert find_declared_tools(source) == [
-        DeclaredTool(1, 1, "(T1 - FIRST)", "FIRST"),
-        DeclaredTool(1, 2, "(T1 - SECOND)", "SECOND"),
+        DeclaredTool(1, 1, "(T1 - FIRST)", "FIRST", "FIRST"),
+        DeclaredTool(1, 2, "(T1 - SECOND)", "SECOND", "SECOND"),
     ]
 
 
@@ -657,7 +662,7 @@ def test_ignores_ordinary_header_comments() -> None:
     source = "(OPERATION 1)\n(USE T1 - CHECK)\n()\n(T2 - DRILL)"
 
     assert find_declared_tools(source) == [
-        DeclaredTool(2, 4, "(T2 - DRILL)", "DRILL")
+        DeclaredTool(2, 4, "(T2 - DRILL)", "DRILL", "DRILL")
     ]
 
 
@@ -669,7 +674,7 @@ def test_commented_fake_tool_call_does_not_end_header_scan() -> None:
     source = "(T6 M06)\n(T1 - ROUGHER)\nT1 M06"
 
     assert find_declared_tools(source) == [
-        DeclaredTool(1, 2, "(T1 - ROUGHER)", "ROUGHER")
+        DeclaredTool(1, 2, "(T1 - ROUGHER)", "ROUGHER", "ROUGHER")
     ]
 
 
@@ -683,7 +688,7 @@ def test_ignores_declaration_like_comments_after_first_real_tool_change() -> Non
     source = "(T1 - BEFORE)\nT1 M06\n(T2 - AFTER)"
 
     assert find_declared_tools(source) == [
-        DeclaredTool(1, 1, "(T1 - BEFORE)", "BEFORE")
+        DeclaredTool(1, 1, "(T1 - BEFORE)", "BEFORE", "BEFORE")
     ]
 
 
@@ -691,7 +696,13 @@ def test_searches_entire_program_when_no_real_tool_change_exists() -> None:
     source = "G00 X0\n(ORDINARY COMMENT)\n(T4 - LATE DECLARATION)"
 
     assert find_declared_tools(source) == [
-        DeclaredTool(4, 3, "(T4 - LATE DECLARATION)", "LATE DECLARATION")
+        DeclaredTool(
+            4,
+            3,
+            "(T4 - LATE DECLARATION)",
+            "LATE DECLARATION",
+            "LATE DECLARATION",
+        )
     ]
 
 
@@ -725,5 +736,230 @@ def test_declared_tool_scanning_does_not_change_tool_occurrences() -> None:
             comments=("INLINE",),
             h_registers=(1,),
             d_registers=(1,),
+        )
+    ]
+
+
+def test_parses_complete_declared_tool_details() -> None:
+    source = (
+        '(T1 - 3/4 EM FL 2.1" FL 2.25" OUT - H1 - D1 - D0.7500")'
+    )
+    details = '3/4 EM FL 2.1" FL 2.25" OUT - H1 - D1 - D0.7500"'
+
+    assert find_declared_tools(source) == [
+        DeclaredTool(
+            tool_number=1,
+            line_number=1,
+            raw_line=source,
+            details=details,
+            description='3/4 EM FL 2.1" FL 2.25" OUT',
+            h_registers=(1,),
+            d_registers=(1,),
+            documented_d_values=('0.7500"',),
+        )
+    ]
+
+
+def test_parses_d191_and_documented_drill_d_value() -> None:
+    source = '(T2 - 61/64 DRILL - H2 - D191 - D0.9531")'
+
+    assert find_declared_tools(source) == [
+        DeclaredTool(
+            tool_number=2,
+            line_number=1,
+            raw_line=source,
+            details='61/64 DRILL - H2 - D191 - D0.9531"',
+            description="61/64 DRILL",
+            h_registers=(2,),
+            d_registers=(191,),
+            documented_d_values=('0.9531"',),
+        )
+    ]
+
+
+def test_description_only_declaration_leaves_metadata_empty() -> None:
+    source = "(T4 - CENTER DRILL)"
+
+    assert find_declared_tools(source) == [
+        DeclaredTool(
+            tool_number=4,
+            line_number=1,
+            raw_line=source,
+            details="CENTER DRILL",
+            description="CENTER DRILL",
+        )
+    ]
+
+
+def test_declared_h_without_d_is_preserved() -> None:
+    source = "(T5 - TAP - H5)"
+
+    assert find_declared_tools(source) == [
+        DeclaredTool(
+            tool_number=5,
+            line_number=1,
+            raw_line=source,
+            details="TAP - H5",
+            description="TAP",
+            h_registers=(5,),
+        )
+    ]
+
+
+def test_declared_d_register_without_documented_value_is_preserved() -> None:
+    source = "(T6 - CHAMFER - D6)"
+
+    assert find_declared_tools(source) == [
+        DeclaredTool(
+            tool_number=6,
+            line_number=1,
+            raw_line=source,
+            details="CHAMFER - D6",
+            description="CHAMFER",
+            d_registers=(6,),
+        )
+    ]
+
+
+def test_normalizes_leading_zero_declared_h_and_d_registers() -> None:
+    source = "(T7 - FINISHER - H007 - D031)"
+
+    declared_tool = find_declared_tools(source)[0]
+
+    assert declared_tool.h_registers == (7,)
+    assert declared_tool.d_registers == (31,)
+
+
+def test_accepts_lowercase_declared_h_and_d_registers() -> None:
+    source = "(T8 - ENDMILL - h8 - d18)"
+
+    declared_tool = find_declared_tools(source)[0]
+
+    assert declared_tool.h_registers == (8,)
+    assert declared_tool.d_registers == (18,)
+
+
+@pytest.mark.parametrize(
+    ("documented_token", "expected_value"),
+    [
+        ("D0.5", "0.5"),
+        ('D0.7500"', '0.7500"'),
+        ("D12.7 MM", "12.7 MM"),
+        ('D1"', '1"'),
+    ],
+)
+def test_preserves_documented_d_value_text(
+    documented_token: str,
+    expected_value: str,
+) -> None:
+    source = f"(T1 - TEST TOOL - {documented_token})"
+
+    declared_tool = find_declared_tools(source)[0]
+
+    assert declared_tool.d_registers == ()
+    assert declared_tool.documented_d_values == (expected_value,)
+
+
+def test_classifies_integer_and_decimal_d_tokens_separately() -> None:
+    source = "(T1 - TEST TOOL - D191 - D0.9531)"
+
+    declared_tool = find_declared_tools(source)[0]
+
+    assert declared_tool.d_registers == (191,)
+    assert declared_tool.documented_d_values == ("0.9531",)
+
+
+def test_preserves_multiple_distinct_declared_registers_in_order() -> None:
+    source = "(T1 - TEST TOOL - H3 - H1 - H2 - D4 - D2 - D3)"
+
+    declared_tool = find_declared_tools(source)[0]
+
+    assert declared_tool.h_registers == (3, 1, 2)
+    assert declared_tool.d_registers == (4, 2, 3)
+
+
+def test_preserves_multiple_documented_d_values_in_order() -> None:
+    source = '(T1 - TEST TOOL - D0.5 - D0.7500" - D12.7 MM)'
+
+    declared_tool = find_declared_tools(source)[0]
+
+    assert declared_tool.documented_d_values == (
+        "0.5",
+        '0.7500"',
+        "12.7 MM",
+    )
+
+
+def test_removes_duplicate_declared_metadata_values() -> None:
+    source = (
+        "(T1 - TEST TOOL - H1 - H001 - H1 "
+        '- D2 - D002 - D2 - D0.5 - D0.5)'
+    )
+
+    declared_tool = find_declared_tools(source)[0]
+
+    assert declared_tool.h_registers == (1,)
+    assert declared_tool.d_registers == (2,)
+    assert declared_tool.documented_d_values == ("0.5",)
+
+
+def test_does_not_parse_h_or_d_text_inside_description() -> None:
+    source = "(T1 - HSS DRILL - CARBIDE D-BIT)"
+
+    assert find_declared_tools(source) == [
+        DeclaredTool(
+            tool_number=1,
+            line_number=1,
+            raw_line=source,
+            details="HSS DRILL - CARBIDE D-BIT",
+            description="HSS DRILL - CARBIDE D-BIT",
+        )
+    ]
+
+
+def test_preserves_hyphens_inside_description() -> None:
+    source = (
+        '(T3 - LEFT-HAND DRILL - LONG SERIES - H3 - D3 - D0.2500")'
+    )
+
+    declared_tool = find_declared_tools(source)[0]
+
+    assert declared_tool.description == "LEFT-HAND DRILL - LONG SERIES"
+    assert declared_tool.h_registers == (3,)
+    assert declared_tool.d_registers == (3,)
+    assert declared_tool.documented_d_values == ('0.2500"',)
+
+
+def test_structuring_preserves_raw_line_and_details() -> None:
+    raw_line = ' \t(T9 - FORM TOOL - H9 - D9 - D1.25 MM)  '
+    source = f"(HEADER)\n{raw_line}\nT9 M06"
+
+    declared_tool = find_declared_tools(source)[0]
+
+    assert declared_tool.line_number == 2
+    assert declared_tool.raw_line == raw_line
+    assert declared_tool.details == "FORM TOOL - H9 - D9 - D1.25 MM"
+
+
+def test_declared_and_executable_register_sources_remain_separate() -> None:
+    source = "(T2 - 61/64 DRILL)\nT2 M06\nG43 H2\nG41 D191"
+
+    assert find_declared_tools(source) == [
+        DeclaredTool(
+            tool_number=2,
+            line_number=1,
+            raw_line="(T2 - 61/64 DRILL)",
+            details="61/64 DRILL",
+            description="61/64 DRILL",
+        )
+    ]
+    assert find_tool_changes(source) == [
+        ToolOccurrence(
+            tool_number=2,
+            line_number=2,
+            raw_line="T2 M06",
+            comments=(),
+            h_registers=(2,),
+            d_registers=(191,),
         )
     ]

@@ -13,6 +13,12 @@ _H_REGISTER_PATTERN = re.compile(r"(?<![A-Z])H(\d+)(?![\d.])", re.IGNORECASE)
 _CUTTER_COMP_PATTERN = re.compile(r"(?<![A-Z])G4[12](?![\d.])", re.IGNORECASE)
 _D_REGISTER_PATTERN = re.compile(r"(?<![A-Z])D(\d+)(?![\d.])", re.IGNORECASE)
 _DECLARED_TOOL_PATTERN = re.compile(r"T(\d+)\s*-(.*)", re.IGNORECASE)
+_DECLARED_H_REGISTER_PATTERN = re.compile(r"H(\d+)", re.IGNORECASE)
+_DECLARED_D_REGISTER_PATTERN = re.compile(r"D(\d+)", re.IGNORECASE)
+_DOCUMENTED_D_VALUE_PATTERN = re.compile(
+    r'D((?:\d+\.\d+|\.\d+|\d+)(?:\s*(?:"|[A-Z]+))?)',
+    re.IGNORECASE,
+)
 
 
 def _replace_comment_with_spaces(match: re.Match[str]) -> str:
@@ -133,6 +139,70 @@ def find_tool_changes(source_text: str) -> list[ToolOccurrence]:
     return occurrences_with_registers
 
 
+def _parse_declared_tool_details(
+    details: str,
+) -> tuple[str, tuple[int, ...], tuple[int, ...], tuple[str, ...]]:
+    segments = details.split("-")
+    first_metadata_index: int | None = None
+    h_registers: list[int] = []
+    d_registers: list[int] = []
+    documented_d_values: list[str] = []
+    seen_h_registers: set[int] = set()
+    seen_d_registers: set[int] = set()
+    seen_documented_d_values: set[str] = set()
+
+    for segment_index, segment in enumerate(segments):
+        stripped_segment = segment.strip()
+
+        h_match = _DECLARED_H_REGISTER_PATTERN.fullmatch(stripped_segment)
+        if h_match is not None:
+            if first_metadata_index is None:
+                first_metadata_index = segment_index
+
+            h_register = int(h_match.group(1))
+            if h_register not in seen_h_registers:
+                seen_h_registers.add(h_register)
+                h_registers.append(h_register)
+            continue
+
+        d_register_match = _DECLARED_D_REGISTER_PATTERN.fullmatch(
+            stripped_segment
+        )
+        if d_register_match is not None:
+            if first_metadata_index is None:
+                first_metadata_index = segment_index
+
+            d_register = int(d_register_match.group(1))
+            if d_register not in seen_d_registers:
+                seen_d_registers.add(d_register)
+                d_registers.append(d_register)
+            continue
+
+        documented_d_match = _DOCUMENTED_D_VALUE_PATTERN.fullmatch(
+            stripped_segment
+        )
+        if documented_d_match is not None:
+            if first_metadata_index is None:
+                first_metadata_index = segment_index
+
+            documented_d_value = documented_d_match.group(1)
+            if documented_d_value not in seen_documented_d_values:
+                seen_documented_d_values.add(documented_d_value)
+                documented_d_values.append(documented_d_value)
+
+    description = details
+    if first_metadata_index is not None:
+        description_segments = segments[:first_metadata_index]
+        description = "-".join(description_segments).strip()
+
+    return (
+        description,
+        tuple(h_registers),
+        tuple(d_registers),
+        tuple(documented_d_values),
+    )
+
+
 def find_declared_tools(source_text: str) -> list[DeclaredTool]:
     """Return header tool declarations before the first real tool change."""
     lines = source_text.splitlines()
@@ -162,12 +232,23 @@ def find_declared_tools(source_text: str) -> list[DeclaredTool]:
         if not details:
             continue
 
+        (
+            description,
+            h_registers,
+            d_registers,
+            documented_d_values,
+        ) = _parse_declared_tool_details(details)
+
         declared_tools.append(
             DeclaredTool(
                 tool_number=int(declaration_match.group(1)),
                 line_number=line_index + 1,
                 raw_line=raw_line,
                 details=details,
+                description=description,
+                h_registers=h_registers,
+                d_registers=d_registers,
+                documented_d_values=documented_d_values,
             )
         )
 
