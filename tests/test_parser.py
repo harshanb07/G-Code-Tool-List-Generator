@@ -1,7 +1,7 @@
 import pytest
 
-from gcode_tool_list.models import ToolOccurrence
-from gcode_tool_list.parser import find_tool_changes
+from gcode_tool_list.models import DeclaredTool, ToolOccurrence
+from gcode_tool_list.parser import find_declared_tools, find_tool_changes
 
 
 @pytest.mark.parametrize(
@@ -551,5 +551,179 @@ def test_integer_register_forms_remain_supported() -> None:
             comments=(),
             h_registers=(7,),
             d_registers=(31, 4),
+        )
+    ]
+
+
+def test_empty_program_has_no_declared_tools() -> None:
+    assert find_declared_tools("") == []
+
+
+def test_program_without_header_tool_list_has_no_declarations() -> None:
+    source = "(OPERATION 1)\nG00 X0\nT1 M06"
+
+    assert find_declared_tools(source) == []
+
+
+def test_finds_one_declared_tool() -> None:
+    source = (
+        '(T17 - 3/16 EM 0.375"FL 0.5"OUT ER16 - H17 - D17 - D0.1875")'
+    )
+
+    assert find_declared_tools(source) == [
+        DeclaredTool(
+            tool_number=17,
+            line_number=1,
+            raw_line=source,
+            details='3/16 EM 0.375"FL 0.5"OUT ER16 - H17 - D17 - D0.1875"',
+        )
+    ]
+
+
+def test_preserves_multiple_declarations_in_header_order() -> None:
+    source = (
+        "(T3 - DRILL)\n"
+        "(PROGRAM INFORMATION)\n"
+        "(T1 - ROUGHER)\n"
+        "(ANOTHER HEADER COMMENT)\n"
+        "(T2 - FINISHER)\n"
+        "T3 M06"
+    )
+
+    assert find_declared_tools(source) == [
+        DeclaredTool(3, 1, "(T3 - DRILL)", "DRILL"),
+        DeclaredTool(1, 3, "(T1 - ROUGHER)", "ROUGHER"),
+        DeclaredTool(2, 5, "(T2 - FINISHER)", "FINISHER"),
+    ]
+
+
+def test_accepts_lowercase_declared_tool() -> None:
+    source = "(t4 - SPOT DRILL)"
+
+    assert find_declared_tools(source) == [
+        DeclaredTool(4, 1, source, "SPOT DRILL")
+    ]
+
+
+def test_normalizes_leading_zero_declared_tool() -> None:
+    source = "(T007 - FINISHER)"
+
+    assert find_declared_tools(source) == [
+        DeclaredTool(7, 1, source, "FINISHER")
+    ]
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "(T1 - DESCRIPTION)",
+        "(T1- DESCRIPTION)",
+        "(T1 -DESCRIPTION)",
+        "(T1-DESCRIPTION)",
+    ],
+)
+def test_accepts_flexible_spacing_around_declaration_hyphen(
+    source: str,
+) -> None:
+    assert find_declared_tools(source) == [
+        DeclaredTool(1, 1, source, "DESCRIPTION")
+    ]
+
+
+def test_preserves_declaration_raw_line_and_one_based_line_number() -> None:
+    raw_line = " \t(T2 - BALL MILL)  "
+    source = f"(HEADER)\n{raw_line}\nT2 M06"
+
+    assert find_declared_tools(source) == [
+        DeclaredTool(
+            tool_number=2,
+            line_number=2,
+            raw_line=raw_line,
+            details="BALL MILL",
+        )
+    ]
+
+
+def test_preserves_repeated_declarations_separately() -> None:
+    source = "(T1 - FIRST)\n(T1 - SECOND)\nT1 M06"
+
+    assert find_declared_tools(source) == [
+        DeclaredTool(1, 1, "(T1 - FIRST)", "FIRST"),
+        DeclaredTool(1, 2, "(T1 - SECOND)", "SECOND"),
+    ]
+
+
+def test_ignores_ordinary_header_comments() -> None:
+    source = "(OPERATION 1)\n(USE T1 - CHECK)\n()\n(T2 - DRILL)"
+
+    assert find_declared_tools(source) == [
+        DeclaredTool(2, 4, "(T2 - DRILL)", "DRILL")
+    ]
+
+
+def test_commented_tool_call_is_not_a_declaration() -> None:
+    assert find_declared_tools("(T1 M06)") == []
+
+
+def test_commented_fake_tool_call_does_not_end_header_scan() -> None:
+    source = "(T6 M06)\n(T1 - ROUGHER)\nT1 M06"
+
+    assert find_declared_tools(source) == [
+        DeclaredTool(1, 2, "(T1 - ROUGHER)", "ROUGHER")
+    ]
+
+
+def test_executable_tool_call_with_comment_is_not_a_declaration() -> None:
+    source = "T1 M06 (DESCRIPTION)"
+
+    assert find_declared_tools(source) == []
+
+
+def test_ignores_declaration_like_comments_after_first_real_tool_change() -> None:
+    source = "(T1 - BEFORE)\nT1 M06\n(T2 - AFTER)"
+
+    assert find_declared_tools(source) == [
+        DeclaredTool(1, 1, "(T1 - BEFORE)", "BEFORE")
+    ]
+
+
+def test_searches_entire_program_when_no_real_tool_change_exists() -> None:
+    source = "G00 X0\n(ORDINARY COMMENT)\n(T4 - LATE DECLARATION)"
+
+    assert find_declared_tools(source) == [
+        DeclaredTool(4, 3, "(T4 - LATE DECLARATION)", "LATE DECLARATION")
+    ]
+
+
+@pytest.mark.parametrize("source", ["(T1 - )", "(T1-)", "(T1 -    )"])
+def test_rejects_declarations_with_empty_details(source: str) -> None:
+    assert find_declared_tools(source) == []
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "(T1 - UNCLOSED",
+        "T1 - MISSING OPEN)",
+        "(T1 - FIRST)(T2 - SECOND)",
+    ],
+)
+def test_rejects_malformed_declaration_comments(source: str) -> None:
+    assert find_declared_tools(source) == []
+
+
+def test_declared_tool_scanning_does_not_change_tool_occurrences() -> None:
+    source = "(T1 - ROUGHER)\nT1 M06 (INLINE)\nG43 H1\nG41 D1"
+
+    find_declared_tools(source)
+
+    assert find_tool_changes(source) == [
+        ToolOccurrence(
+            tool_number=1,
+            line_number=2,
+            raw_line="T1 M06 (INLINE)",
+            comments=("INLINE",),
+            h_registers=(1,),
+            d_registers=(1,),
         )
     ]

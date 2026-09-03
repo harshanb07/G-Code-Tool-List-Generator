@@ -2,7 +2,7 @@
 
 import re
 
-from gcode_tool_list.models import ToolOccurrence
+from gcode_tool_list.models import DeclaredTool, ToolOccurrence
 
 
 _COMMENT_PATTERN = re.compile(r"\(([^)]*)\)")
@@ -12,6 +12,7 @@ _G43_PATTERN = re.compile(r"(?<![A-Z])G43(?![\d.])", re.IGNORECASE)
 _H_REGISTER_PATTERN = re.compile(r"(?<![A-Z])H(\d+)(?![\d.])", re.IGNORECASE)
 _CUTTER_COMP_PATTERN = re.compile(r"(?<![A-Z])G4[12](?![\d.])", re.IGNORECASE)
 _D_REGISTER_PATTERN = re.compile(r"(?<![A-Z])D(\d+)(?![\d.])", re.IGNORECASE)
+_DECLARED_TOOL_PATTERN = re.compile(r"T(\d+)\s*-(.*)", re.IGNORECASE)
 
 
 def _replace_comment_with_spaces(match: re.Match[str]) -> str:
@@ -130,3 +131,44 @@ def find_tool_changes(source_text: str) -> list[ToolOccurrence]:
         )
 
     return occurrences_with_registers
+
+
+def find_declared_tools(source_text: str) -> list[DeclaredTool]:
+    """Return header tool declarations before the first real tool change."""
+    lines = source_text.splitlines()
+    header_end = len(lines)
+    tool_occurrences = find_tool_changes(source_text)
+
+    if tool_occurrences:
+        header_end = tool_occurrences[0].line_number - 1
+
+    declared_tools: list[DeclaredTool] = []
+
+    for line_index in range(header_end):
+        raw_line = lines[line_index]
+        stripped_line = raw_line.strip()
+        comment_match = _COMMENT_PATTERN.fullmatch(stripped_line)
+
+        if comment_match is None:
+            continue
+
+        comment_content = comment_match.group(1)
+        declaration_match = _DECLARED_TOOL_PATTERN.fullmatch(comment_content)
+
+        if declaration_match is None:
+            continue
+
+        details = declaration_match.group(2).strip()
+        if not details:
+            continue
+
+        declared_tools.append(
+            DeclaredTool(
+                tool_number=int(declaration_match.group(1)),
+                line_number=line_index + 1,
+                raw_line=raw_line,
+                details=details,
+            )
+        )
+
+    return declared_tools

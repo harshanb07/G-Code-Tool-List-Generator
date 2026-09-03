@@ -16,6 +16,16 @@ class ToolOccurrence:
 
 
 @dataclass
+class DeclaredTool:
+    """One tool declared in a program's header tool list."""
+
+    tool_number: int
+    line_number: int
+    raw_line: str
+    details: str
+
+
+@dataclass
 class ToolGroup:
     """All tool-change occurrences for one normalized tool number."""
 
